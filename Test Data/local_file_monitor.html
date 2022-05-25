@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>MAG Data Watcher</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+		<!-- bootstrap 4 -->
+		<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+		<script src="https://code.jquery.com/jquery-3.4.1.min.js" integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+		<script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+		<!-- end bootstrap -->
+
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/dygraph/2.0.0/dygraph.js"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.24.0/moment.js" integrity="sha256-H9jAz//QLkDOy/nzE9G4aYijQtkLt9FvGmdUTwBk6gs=" crossorigin="anonymous"></script>
+		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/dygraph/2.0.0/dygraph.css">
+
+		<script src="https://d3js.org/d3.v5.min.js"></script>
+	</head>
+	<style>
+		.hidden {
+			display:none;
+			visibility:hidden;
+		}
+		table{
+			border:1px solid grey;
+			width:100%;
+		}
+		table tr td {
+			border:1px solid grey;
+		}
+		#data-dir {
+			width:75vw;
+		}
+	</style>
+	<body>
+
+		<div class="container-fluid">
+			<h3>Graph</h3>
+			<p> Data times shown as UTC Time </p>
+			<div id="graph" style="width:100%;"></div>
+
+			<h3>Settings</h3>
+			<label for="update-interval-amount">
+				Update Interval (seconds)
+			</label>
+			<input id="update-interval-amount" type="number" min="10" name="update interval" value="30">
+			<button onclick="updateInterval()"> Save </button>
+			<br>
+			<label for="update-interval-amount">
+				Max Records
+			</label>
+			<input id="record-amount" type="number" min="50" name="update interval" value="1000">
+			<button onclick="updateMaxRecords()"> Save </button>
+			<br>
+			<label for="data-dir">
+				Data Directory
+			</label>
+			<input id="data-dir" type="text" name="update interval">
+			<button onclick="updateDataDir()"> Save </button>
+
+			<h3>Information</h3>
+			<table class="table-striped">
+				<tr>
+					<td>
+						<h5>Data Directory</h5>
+					</td>
+					<td>
+						<div id="show-data-dir"></div>
+					</td>
+				</tr>
+				<tr>
+					<td>
+						<h5>Last Update</h5>
+					</td>
+					<td>
+						<div id="last-update">None</div>
+					</td>
+				</tr>
+				<tr>
+					<td>
+						<h5>Latest Data Time</h5>
+					</td>
+					<td>
+						<div id="last-timestamp"></div>
+					</td>
+				</tr>
+				<tr>
+					<td>
+						<h5>Error Count</h5>
+					</td>
+					<td>
+						<div id="error-count">0</div>
+					</td>
+				</tr>
+				<tr>
+					<td>
+						<h5>Latest Error Time</h5>
+					</td>
+					<td>
+						<div id="last-error-timestamp">None</div>
+					</td>
+				</tr>
+				<tr>
+					<td>
+						<h5>Latest Errors</h5>
+					</td>
+					<td>
+						<div id="error-log"></div>
+					</td>
+				</tr>
+			</table>
+
+		</div>
+
+		<div class="hidden" id="loader"></div>
+		<footer>
+		</footer>
+	</body>
+	<script>
+		let g; // graph object
+		let g_d3; // d3 graph object
+
+		// times
+		let cur_time = new Date();
+		let last_timestamp_on_graph = null;
+		let last_update = null;
+		let update_interval = 30 * 1000; // time in milliseconds between updates default 30
+		let interval_id; // reference to an update interval, userful for stopping or updating
+
+		// limit amount displayable
+		let record_limit = 1000;
+
+		// for zero value mode
+		let graph_zero_mode = true;
+		let values_to_average = [1,3,5];
+		let value_averages = [0, 0, 0];
+		let utc_mode = true;
+
+		// errors
+		let errors = 0;
+		let errorlog = [];
+		let last_error;
+
+		// dygraph display options
+		let graph_options = {
+			labelsUTC: true
+		};
+		let _init = true; // for when first file fetch attempt fails
+
+		// source data dir given as url param
+		let dir = getUrlParam('data_dir', null);
+		$('#data-dir').val(dir); // default dir
+		updateDataDir();
+
+
+		/* addError
+		 *
+		 * add an error to the error log
+		 */
+		function addError(error_message, row_index=null){
+			console.error("new error: ", error_message, " row: ", row_index);
+
+			// time of error
+			var new_time = new Date();
+			document.getElementById('last-error-timestamp').innerHTML = new_time.toString();
+			// iso format
+			//document.getElementById('last-error-timestamp').innerHTML = new_time.toISOString();
+
+			errors += 1;
+			if (errors > 5){
+				// remove first div in error log
+				$('#error-log div').first().remove();
+			}
+
+			if (row_index != null){
+				errorlog.push("Row: "+row_index+" Error: "+error_message);
+				document.getElementById('error-log').innerHTML += "<div>"+ errors +". Row: "+row_index+" Error: "+error_message+"</div>";
+			}else{
+				errorlog.push("Error: "+error_message);
+				document.getElementById('error-log').innerHTML += "<div>"+ errors + ". Error: "+error_message+"</div>";
+			}
+			document.getElementById('error-count').innerHTML = errors.toString();
+		}
+
+
+		/* getUrlVars
+		 *
+		 */
+		function getUrlVars() {
+			var vars = {};
+			var parts = window.location.href.replace(/[?&]+([^=&]+)=([^&]*)/gi, function(m,key,value) {
+				vars[key] = value;
+			});
+			return vars;
+		}
+
+
+		/* updateInterval
+		 *
+		 */
+		function updateInterval() {
+			update_interval = $('#update-interval-amount').val() * 1000;
+			console.log("updateInterval, new interval: ", update_interval);
+			//  clear old interval
+			if (interval_id !== undefined){
+				clearInterval(interval_id)
+				interval_id = setInterval(updateGraph, update_interval, g);
+			}else{
+				// there is no so no need to clear
+				interval_id = setInterval(updateGraph, update_interval, g);
+			}
+		}
+
+
+		/* updateMaxRecords
+		 *
+		 * max records show on graph
+		 */
+		function updateMaxRecords() {
+			record_limit = $('#record-amount').val();
+			//console.log("updateMaxRecords, now: ", record_limit);
+		}
+
+
+		/* updateDataDir
+		 *
+		 * diretory to look for data files
+		 */
+		function updateDataDir(){
+			//console.log('updateDataDir');
+			dir = $('#data-dir').val();
+			document.getElementById('show-data-dir').innerHTML = dir;
+		}
+
+
+		/* getUrlParam
+		 *
+		 * parse/get url params
+		 */
+		function getUrlParam(parameter, defaultvalue){
+			var urlparameter = defaultvalue;
+			if(window.location.href.indexOf(parameter) > -1){
+				urlparameter = getUrlVars()[parameter];
+			}
+			return urlparameter;
+		}
+
+
+		/* setLastTimestamp
+		 *
+		 * keep track of the latest datetime on the graph
+		 */
+		function setLastTimestamp(date_object){
+			last_timestamp_on_graph = date_object;
+			document.getElementById('last-timestamp').innerHTML = date_object.toString();
+			var utc_div = document.getElementById('last-timestamp-utc');
+			if( utc_div ){
+				utc_div.innerHTML = date_object.toUTCString();
+			}
+		}
+
+
+		/* leading zeros
+		 *
+		 * string format helper method
+		 *
+		 * zero padding for month and days
+		 */
+		function leading_zeros(input){
+			return String("00" + input.toString()).slice(-2);
+		}
+
+
+		/* fileLoadError
+		 *
+		 * file cannot be loaded or does not exist.
+		 * since jquery doesnt provide error details we just have to assume its file not found
+		 */
+		function fileLoadError(jsXHR, textStatus, errorThrown){
+			last_error = jsXHR;
+			if (errorThrown == ""){
+				// assume file not found
+				let day = cur_time.getUTCDate(),
+					month = cur_time.getUTCMonth() + 1,
+					year = cur_time.getUTCFullYear();
+				let todays_filename = year + leading_zeros(month) + leading_zeros(day) +'.txt'
+				addError("File Could Not Be Loaded: File Does not exist: "+todays_filename);
+				if (_init == true){
+					updateInterval();
+					_init = false;
+				}
+			}else{
+				addError("File Could Not Be Loaded: " + errorThrown);
+			}
+		}
+
+
+		/* getAverages
+		 *
+		 * average values to zero values from start of day
+		 * only ran on initial file load
+		 */
+		function getAverages(lines, starting_record){
+			// reset averages
+			value_averages = [0, 0, 0];
+
+			// clean up format for each row
+			let first_5_lines = lines.slice(starting_record, starting_record+5);
+
+			for (r_id in first_5_lines){
+				let data_str = first_5_lines[r_id].substr( first_5_lines[r_id].lastIndexOf(':')+2, first_5_lines[r_id].length)
+				let data_parts = data_str.split(','); // parts is x, xval, y, yval, z, zval
+				for (dp_index in data_parts){
+					let index = parseInt(dp_index);
+					if (values_to_average.includes(index) ){
+						value_averages[values_to_average.indexOf(index)] += parseFloat(data_parts[index]);
+					}
+				}
+			}
+
+			for(v_id in value_averages){
+				value_averages[v_id] = value_averages[v_id] / 5;
+			}
+		}
+
+
+		/* first_row_after_data
+		 *
+	 	 * input_file: array of lines from a csv like file
+		 */
+		function first_row_after_data(input_file, last_timestamp){
+			let starting_index = -1;
+			// find first line in input file that happens after the timestamp
+			for (lineIndex in input_file){
+				let line = input_file[lineIndex];
+				// NOTE: if data syntax changes we might have to change this
+				try{
+					let datetime_str = line.substr(0, line.lastIndexOf(':'))
+					// time and date split by space
+					let datetime_parts = datetime_str.split(' ');
+					// now split date and time
+					let date_parts = datetime_parts[0].split('.'); // zero padded M D Y(last two digit)
+					let time_parts;
+					try{
+						time_parts = datetime_parts[1].split(':'); // 24HR order H M S
+					}catch (e){
+						// there are times when no time is providedd, assume mignight
+						time_parts = "00:00:00"; // 24HR order H M S
+					}
+
+					let line_datetime;
+					if (utc_mode){
+						// UTC
+						line_datetime = new Date(Date.UTC(("20" + date_parts[2]), parseInt(date_parts[0])-1, date_parts[1], time_parts[0], time_parts[1], time_parts[2], 0))
+					}else{
+						// NON UTC
+						line_datetime = new Date(date_parts[2], parseInt(date_parts[0])-1, date_parts[1], time_parts[0], time_parts[1], time_parts[2])
+					}
+
+					if (line_datetime > last_timestamp){
+						starting_index = lineIndex;
+						break;
+					}
+				}catch (e){
+					console.log("first_row_after_data ERROR ", e, line);
+				}
+			}
+			return input_file.slice(starting_index);
+		}
+
+
+		/* fileLoadSuccess
+		 *
+		 * file parsing logic, prepare data for graph, push to graph
+		 */
+		function fileLoadSuccess(response, textStatus){
+
+			if (_init == true) _init = false; // successfull init
+
+			let lines = response.split('\n');
+			let data = [];
+			let last_line = lines[lines.length-1];
+			if( last_line == '' ){
+				//console.log("empty last line");
+				lines.pop()
+				last_line = lines[lines.length-1];
+			}
+			let append_mode = false;
+
+			// NOTE: if data syntax changes we might have to change this
+			let datetime_str = last_line.substr(0, last_line.lastIndexOf(':'))
+			// time and date split by space
+			let datetime_parts = datetime_str.split(' ');
+			// now split date and time
+			let date_parts = datetime_parts[0].split('.'); // zero padded M D Y(last two digit)
+			let time_parts = datetime_parts[1].split(':'); // 24HR order H M S
+
+			let last_datetime;
+			if (utc_mode){
+				// UTC
+				last_datetime = new Date(Date.UTC(("20" + date_parts[2]), parseInt(date_parts[0])-1, date_parts[1], time_parts[0], time_parts[1], time_parts[2], 0))
+			}else{
+				// NON UTC
+				last_datetime = new Date(date_parts[2], parseInt(date_parts[0])-1, date_parts[1], time_parts[0], time_parts[1], time_parts[2])
+			}
+
+			// check current graph state
+			let existing_records = 0;
+
+			if (last_timestamp_on_graph != null){
+				existing_records = g.file_.length;
+				append_mode = true;
+
+				if (last_datetime <= last_timestamp_on_graph){
+					console.log("No New Data ", last_datetime, " > ", last_timestamp_on_graph);
+					// nothing needed to be done
+					return;
+				}else{
+					console.log("append data ", last_datetime, " < ", last_timestamp_on_graph);
+					// data is new, subset the input file to new data only
+					lines = first_row_after_data(lines, last_timestamp_on_graph);
+				}
+			}
+			// last timestamp will always be last datetime in whatever file is being read
+			setLastTimestamp(last_datetime);
+
+			// limit amount of records
+			let starting_record = 0;
+			let records_to_keep = [];
+			if (existing_records > record_limit){
+				console.log("already at cap, need to shift off records. existing records: ", existing_records);
+
+				// already at cap, need to shift off records
+				if (lines.length >= record_limit){
+					console.log("only new file");
+					// only new file
+					records_to_keep = [];
+				}else{
+					// can keep some existing records
+					let space = record_limit - lines.length;
+					console.log("can keep some old (",space,")");
+					records_to_keep = g.file_.slice(existing_records-space, existing_records);
+				}
+
+			}else if (existing_records != 0 && existing_records + lines.length > record_limit){
+				// have records and need to shift
+				console.log("not at cap, adding new will overflow");
+
+				let space = record_limit - lines.length;
+				records_to_keep = g.file_.slice(existing_records-space, existing_records);
+
+			}else if (lines.length > record_limit){
+
+				console.log("file has too many records limiting");
+				// too many records in file, chop them off
+				starting_record = lines.length - record_limit;
+
+			}else{
+				console.log("plenty of space to add");
+			}
+
+			// average first occuring values
+			if (graph_zero_mode && !append_mode){
+				getAverages(lines, starting_record); // saves to values_averages
+				console.log("Value Averages: ", value_averages);
+			}
+
+			// format data for graph
+			// clean up format for each row
+			for (r_id in lines){
+				if (r_id < starting_record){
+					continue;
+				}
+
+				// NOTE: if data syntax changes we might have to change this
+				let datetime_str = lines[r_id].substr(0, lines[r_id].lastIndexOf(':'))
+				let data_str = lines[r_id].substr(lines[r_id].lastIndexOf(':')+2, lines[r_id].length)
+				let data_parts = data_str.split(','); // parts is x, xval, y, yval, z, zval
+
+				for (dp_index in data_parts){
+					let index = parseInt(dp_index);
+					if (index % 2 == 1){
+						if (graph_zero_mode){
+							//console.log("index", index, "sub ", value_averages[index], " from ", data_parts[dp_index]);
+							data_parts[dp_index] = (parseFloat(data_parts[dp_index]) - value_averages[values_to_average.indexOf(index)]);
+						}else{
+							data_parts[dp_index] = parseFloat(data_parts[dp_index]);
+						}
+					}
+				}
+
+				// time and date split by space
+				let datetime_parts = datetime_str.split(' ');
+				let date_parts = datetime_parts[0].split('.'); // zero padded M D Y(last two digit)
+				let time_parts;
+
+				if (datetime_str.indexOf(' ') > 0){
+					time_parts = datetime_parts[1].split(':'); // 24HR order H M S
+				}else{
+					time_parts = ["00", "00", "00"]; // 24HR order H M S
+				}
+
+				let d = new Date(Date.UTC(("20" + date_parts[2]), date_parts[0], date_parts[1], time_parts[0], time_parts[1], time_parts[2], 0))
+
+				// target format datetime, xval, yval, zval
+				let new_line = [d, data_parts[1], data_parts[3], data_parts[5]];
+				// e
+				if (!isNaN(d)){
+					data.push(new_line);
+				}else{
+					addError("invalid date", r_id);
+				}
+			}
+
+			if (append_mode){
+				//g.updateOptions({'file': records_to_keep.concat(data)});
+				g = new Dygraph(document.getElementById('graph'), records_to_keep.concat(data), graph_options);
+			}else{
+				g = new Dygraph(document.getElementById('graph'), data, graph_options);
+			}
+
+			/*
+			console.log("pre graph data length", existing_records);
+			console.log("post graph data length", g.file_.length);
+			if (g.file_.length < 100){
+				console.log("post graph data", g.file_);
+			}
+			*/
+
+			// set up update interval
+			updateInterval(); // sets to whatever is in input field or defualt
+		}
+
+
+		/* initGraph
+		 *
+		 * called once to initially setup a graph and graph all data for current day
+		 */
+		function initGraph(){
+			console.log("initGraph dir: ", dir);
+
+			// filename
+			cur_time = new Date();
+			let day = cur_time.getUTCDate(),
+				month = cur_time.getUTCMonth() + 1,
+				year = cur_time.getUTCFullYear();
+
+			console.log("get file for day: (M/D/Y) ", month, day, year);
+			let todays_filename = year + leading_zeros(month) + leading_zeros(day) +'.txt'
+			console.log("try file", todays_filename);
+
+			// on success make the graph
+			$.ajax({
+				url: 'file:////' + dir + '/'+ todays_filename,
+				success: fileLoadSuccess,
+				error: fileLoadError
+			});
+
+			/* TEST - always open test file */
+			/*
+			$.ajax({
+				url: 'file:////' + dir + '/test.txt',
+				success: fileLoadSuccess,
+				error: fileLoadError
+			});
+			*/
+		}
+
+
+		/* updateGraph
+		 *
+		 */
+		function updateGraph(graph){
+			//console.log("updateGraph ", graph);
+			var new_time = new Date();
+
+			// update page to show latest update
+			document.getElementById('last-update').innerHTML = new_time.toString();
+
+			var day = new_time.getUTCDate(),
+				month = new_time.getMonth()+1,
+				year = new_time.getFullYear();
+
+			/*
+			if (day != cur_time.getUTCDate()){
+				// update
+				//console.log("update graph day: (M/D/Y) ", month, day, year);
+				console.log("NEW DAY load totally new file");
+			}else{
+				console.log("SAME DAY?", cur_time, new_time,", load after ", last_timestamp_on_graph.toUTCString());
+			}
+			*/
+			cur_time = new_time;
+
+			var todays_filename = year + leading_zeros(month) + leading_zeros(day) +'.txt'
+			//console.log("try file", todays_filename);
+
+			// on success make the graph
+			$.ajax({
+				url: 'file:////' + dir + '/'+ todays_filename,
+				success: fileLoadSuccess,
+				error: fileLoadError
+			});
+		}
+
+
+		/* checkFilePermissions
+		 *
+		 */
+		function checkFilePermissions(){
+			// Check for the various File API support.
+			if (window.File && window.FileReader && window.FileList && window.Blob) {
+				netscape.security.PrivilegeManager.enablePrivilege("UniversalBrowserRead");
+				// Great success! All the File APIs are supported.
+				return true;
+			} else {
+				alert('The File APIs are not fully supported in this browser.');
+				return false;
+			}
+		}
+
+
+		/* init
+		 *
+		 * application entry point
+		 */
+		function init(){
+			if (checkFilePermissions){
+				initGraph();
+			}else{
+				alert("Cannot Run without file access. Halting");
+			}
+		}
+
+		init(); // initialize
+	</script>
+</html>
+
