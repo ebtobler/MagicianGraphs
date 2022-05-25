@@ -62,9 +62,11 @@ def data_lines(file, time, lines):
 
 
 def main():
-    file = "/Test Data/DataStreamer-master/local_file_monitor/day.txt"
+    file = "Test Data\\DataStreamer-master\\local_file_monitor\\day.txt"
     # write_to_file(file)
-    data_lines(file, "01:20:19:", 5)
+
+    write_to_file(file)
+    # data_lines(file, "01:20:19:", 5)
     """
     t = "00:01:02:"
     t = t.split(":")

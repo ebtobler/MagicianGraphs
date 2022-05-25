@@ -46,6 +46,7 @@ class Measurement:
         return self.line
 
 
+# Loads a file with measurement formatting and returns each line as an item in a list
 def load_file(file):
     handle = open(file, 'r')
     all_measurements = []
@@ -68,24 +69,31 @@ def main():
     plt.show()
 
     while True:
+        # Loads given file
         p1 = load_file(file)
-        # print(p1.__repr__())
 
+        # Sets t, x, y, and z values based on file then plots them as lines
         t = list(map(lambda Measurement: Measurement.time, p1))
-        print(t)
         x = list(map(lambda Measurement: Measurement.x, p1))
         y = list(map(lambda Measurement: Measurement.y, p1))
         z = list(map(lambda Measurement: Measurement.z, p1))
 
-        plt.plot(t, x, label="x")
-        plt.plot(t, y, label="y")
-        plt.plot(t, z, label="z")
-        plt.xticks(range(len(t)), t, size="small")
+        plt.plot(t, x, label="x", color="red")
+        plt.plot(t, y, label="y", color="blue")
+        plt.plot(t, z, label="z", color="green")
+        plt.legend(loc="lower right")
+        # plt.xticks([])
+
+        # This method lets you customize axis ticks - they are set so the x-ticks are rotated 90 degrees
+        # so that they all fit on screen and are legible
+        plt.tick_params(axis="x", labelrotation=90, pad=1)
 
         plt.draw()
         plt.pause(5)
-        data_lines(file, "09:47:53:", 5)
-        print("after pause")
+
+        data_lines(file, "09:54:35:", 5)
+        plt.clf()
+        print("after clear")
 
 
 if __name__ == "__main__":
