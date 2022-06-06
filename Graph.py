@@ -61,14 +61,16 @@ def load_file(file):
     return all_measurements
 
 
-def main():
-    file = "C:\\Users\\Eben\\SourceCode\\MAGICIAN\\Graph Program\\Test Data\\" \
-           "DataStreamer-master\\local_file_monitor\\day.txt"
+# Graphs a file that is being updated
+def graph_dynamic(file):
+    title = file.split("\\")[-1]
     plt.ion()
     plt.ylim(-40000, 40000)
     plt.show()
 
     while True:
+        # Sets header
+        plt.title("Graph of " + title)
         # Loads given file
         p1 = load_file(file)
 
@@ -82,9 +84,8 @@ def main():
         plt.plot(t, y, label="y", color="blue")
         plt.plot(t, z, label="z", color="green")
         plt.legend(loc="lower right")
-        # plt.xticks([])
 
-        # This method lets you customize axis ticks - they are set so the x-ticks are rotated 90 degrees
+        # This method lets you customize axis ticks - the x-ticks are rotated 90 degrees
         # so that they all fit on screen and are legible
         plt.tick_params(axis="x", labelrotation=90, pad=1)
 
@@ -94,6 +95,41 @@ def main():
         data_lines(file, "09:54:35:", 5)
         plt.clf()
         print("after clear")
+
+
+# Graphs a file that is not being changed
+def graph_static(file):
+    title = file.split("\\")[-1]
+    plt.ylim(-40000, 40000)
+
+    # Sets header
+    plt.title("Graph of " + title)
+
+    # Loads given file
+    p1 = load_file(file)
+
+    # Sets t, x, y, and z values based on file then plots them as lines
+    t = list(map(lambda Measurement: Measurement.time, p1))
+    x = list(map(lambda Measurement: Measurement.x, p1))
+    y = list(map(lambda Measurement: Measurement.y, p1))
+    z = list(map(lambda Measurement: Measurement.z, p1))
+
+    plt.plot(t, x, label="x", color="red")
+    plt.plot(t, y, label="y", color="blue")
+    plt.plot(t, z, label="z", color="green")
+    plt.legend(loc="lower right")
+
+    # This method lets you customize axis ticks - the x-ticks are rotated 90 degrees
+    # so that they all fit on screen and are legible
+    plt.tick_params(axis="x", labelrotation=90, pad=1)
+
+    plt.show()
+
+
+def main():
+    file = "C:\\Users\\Eben\\SourceCode\\MAGICIAN\\Graph Program\\Test Data\\" \
+           "DataStreamer-master\\local_file_monitor\\day.txt"
+    graph_static(file)
 
 
 if __name__ == "__main__":
