@@ -7,11 +7,11 @@ def write_to_file(file):
     minute = 00
     sec = 00
     while hour <= 23:
-        handle.writelines("1582350050,1582451171,2020,25.66,23.02.20 "
+        handle.writelines("1582350050,2020,25.66,23.02.20 "
                           + str(hour) + ":" + str(minute) + ":" + str(sec)
                           + ": X,-16871,46,Y,-33974,-44,Z,32913,-24,3" + "\n")
 
-        sec += 1
+        sec += 2
         if sec == 60:
             sec = 0
             minute += 1
@@ -37,7 +37,7 @@ def data_lines(file, time, lines):
         int_minute = int(minute)
         int_second = int(second)
 
-        int_second += 1
+        int_second += 2
         if int_second == 60:
             int_second = 0
             int_minute += 1
@@ -63,10 +63,9 @@ def data_lines(file, time, lines):
 
 def main():
     file = "Test Data\\DataStreamer-master\\local_file_monitor\\day.txt"
-    # write_to_file(file)
 
     write_to_file(file)
-    # data_lines(file, "01:20:19:", 5)
+    # data_lines(file, "01:20:19:", 58)
     """
     t = "00:01:02:"
     t = t.split(":")
